@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 /**
  * Environment configuration for the application
  */
@@ -10,11 +12,10 @@ interface EnvironmentConfig {
   };
 }
 
-// API Base URLs
-const API_URLS = {
-  DEVELOPMENT: '/api/Event',  // This will be proxied by Vite in development
-  PRODUCTION: '/api/Event'  // Direct API URL in production
-};
+// API Base URL
+const API_URL = import.meta.env.DEV 
+  ? '/api/Event'  
+  : 'http://asifghafoor-001-site12.ntempurl.com/api/Event';  
 
 // API Endpoints
 const API_ENDPOINTS = {
@@ -22,17 +23,22 @@ const API_ENDPOINTS = {
   getAllEvents: '/GetAllEvents'
 };
 
-// Determine if we're in development mode
-const isDev = import.meta.env.MODE === 'development';
 
-// Select the appropriate API URL based on environment
-const selectedApiUrl = isDev ? API_URLS.DEVELOPMENT : API_URLS.PRODUCTION;
-
-// Configuration for the current environment
 const environmentConfig: EnvironmentConfig = {
-  apiUrl: selectedApiUrl,
+  apiUrl: API_URL,
   apiEndpoints: API_ENDPOINTS,
 };
+
+
+export const apiClient = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'X-Tenant-ID': '123e4567-e89b-12d3-a456-426614174001', 
+  },
+  withCredentials: false,
+});
 
 /**
  * Get the full URL for an API endpoint
@@ -50,9 +56,10 @@ export const getApiUrl = (endpoint: keyof EnvironmentConfig['apiEndpoints']): st
 export const getFetchOptions = (): RequestInit => {
   return {
     mode: 'cors',
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'X-Tenant-ID': '123e4567-e89b-12d3-a456-426614174001', 
     },
   };
 };

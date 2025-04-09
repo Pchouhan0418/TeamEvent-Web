@@ -1,5 +1,5 @@
 import { type Event as EventType, Attendee } from '../types/event';
-import { getApiUrl, getFetchOptions } from '../config/environment';
+import { apiClient } from '../config/environment';
 
 // Local cache for events
 let events: EventType[] = [];
@@ -29,39 +29,6 @@ interface ApiGetEventsResponse {
   error: boolean;
 }
 
-// Mock data to use when API calls fail
-const MOCK_EVENTS: EventType[] = [
-  {
-    id: 1,
-    name: "Team Building Workshop",
-    startTime: "2023-06-15T09:00:00",
-    endTime: "2023-06-15T17:00:00",
-    venue: "Conference Room A",
-    attendees: [
-      { name: "John Doe", email: "john@example.com" },
-      { name: "Jane Smith", email: "jane@example.com" }
-    ]
-  },
-  {
-    id: 2,
-    name: "Project Kickoff Meeting",
-    startTime: "2023-06-20T10:00:00",
-    endTime: "2023-06-20T12:00:00",
-    venue: "Virtual Meeting Room",
-    attendees: [
-      { name: "Alice Johnson", email: "alice@example.com" },
-      { name: "Bob Williams", email: "bob@example.com" }
-    ]
-  }
-];
-
-// Helper to mark that we're using mock data
-const setUsingMockData = () => {
-  window.localStorage.setItem('using_mock_data', 'true');
-  // Dispatch an event to notify any listeners
-  window.dispatchEvent(new Event('storage'));
-};
-
 /**
  * Service for managing events via API
  */
@@ -82,68 +49,25 @@ export const eventService = {
         attendeesList: eventData.attendees,
       };
 
-      try {
-        // Call the API with CORS options
-        const fetchOptions = {
-          ...getFetchOptions(),
-          method: 'POST',
-          body: JSON.stringify(apiRequest),
-        };
+      const response = await apiClient.post<ApiEventResponse>('/CreateEvent', apiRequest);
 
-        const response = await fetch(getApiUrl('createEvent'), fetchOptions);
+      // Transform the API response back to our Event format
+      const newEvent: EventType = {
+        id: response.data.id,
+        name: response.data.name,
+        startTime: response.data.startTime,
+        endTime: response.data.endTime,
+        venue: response.data.venue,
+        attendees: response.data.attendeesList || [],
+      };
 
-        if (!response.ok) {
-          // In production, for API errors, create a mock event with an auto-generated ID
-          if (import.meta.env.PROD) {
-            console.warn(`Using mock data due to API error: ${response.status}`);
-            setUsingMockData();
-            const mockId = Math.floor(Math.random() * 1000) + 10;
-            const mockEvent: EventType = {
-              ...eventData,
-              id: mockId,
-            };
-            events.push(mockEvent);
-            return mockEvent;
-          }
-          
-          const errorText = await response.text().catch(() => 'Unknown error');
-          throw new Error(`API error: ${response.status} ${response.statusText} - ${errorText}`);
-        }
+      // Add to local cache
+      events.push(newEvent);
 
-        const apiResponse: ApiEventResponse = await response.json();
+      console.log(`Event created successfully: ${newEvent.name}`);
+      console.log(`Email notifications would be sent to ${newEvent.attendees.length} attendees`);
 
-        // Transform the API response back to our Event format
-        const newEvent: EventType = {
-          id: apiResponse.id,
-          name: apiResponse.name,
-          startTime: apiResponse.startTime,
-          endTime: apiResponse.endTime,
-          venue: apiResponse.venue,
-          attendees: apiResponse.attendeesList || [],
-        };
-
-        // Add to local cache
-        events.push(newEvent);
-
-        console.log(`Event created successfully: ${newEvent.name}`);
-        console.log(`Email notifications would be sent to ${newEvent.attendees.length} attendees`);
-
-        return newEvent;
-      } catch (fetchError) {
-        // In production, if fetch fails completely, use mock data
-        if (import.meta.env.PROD) {
-          console.warn('Using mock data due to fetch error:', fetchError);
-          setUsingMockData();
-          const mockId = Math.floor(Math.random() * 1000) + 10;
-          const mockEvent: EventType = {
-            ...eventData,
-            id: mockId,
-          };
-          events.push(mockEvent);
-          return mockEvent;
-        }
-        throw fetchError;
-      }
+      return newEvent;
     } catch (error) {
       console.error('Error creating event:', error);
       throw error;
@@ -156,53 +80,23 @@ export const eventService = {
    */
   async getEvents(): Promise<EventType[]> {
     try {
-      try {
-        // Call the API with CORS options
-        const fetchOptions = {
-          ...getFetchOptions(),
-          method: 'GET',
-        };
+      const response = await apiClient.get<ApiGetEventsResponse>('/GetAllEvents');
 
-        const response = await fetch(getApiUrl('getAllEvents'), fetchOptions);
-
-        // In production environment, use mock data for 401 errors
-        if (!response.ok) {
-          if (import.meta.env.PROD) {
-            console.warn(`Using mock data due to API error: ${response.status}`);
-            setUsingMockData();
-            return MOCK_EVENTS;
-          }
-          
-          const errorText = await response.text().catch(() => 'Unknown error');
-          throw new Error(`API error: ${response.status} ${response.statusText} - ${errorText}`);
-        }
-
-        const apiResponse: ApiGetEventsResponse = await response.json();
-        
-        if (apiResponse.error) {
-          throw new Error(`API returned an error: ${apiResponse.message}`);
-        }
-
-        // Map API response to our Event format
-        events = apiResponse.data.map(eventData => ({
-          id: eventData.id,
-          name: eventData.name,
-          startTime: eventData.startTime,
-          endTime: eventData.endTime,
-          venue: eventData.venue,
-          attendees: eventData.attendeesList || [],
-        }));
-
-        return events;
-      } catch (fetchError) {
-        // In production, if fetch fails completely (network error, CORS, etc), use mock data
-        if (import.meta.env.PROD) {
-          console.warn('Using mock data due to fetch error:', fetchError);
-          setUsingMockData();
-          return MOCK_EVENTS;
-        }
-        throw fetchError;
+      if (response.data.error) {
+        throw new Error(`API returned an error: ${response.data.message}`);
       }
+
+      // Map API response to our Event format
+      events = response.data.data.map((eventData: ApiEventResponse) => ({
+        id: eventData.id,
+        name: eventData.name,
+        startTime: eventData.startTime,
+        endTime: eventData.endTime,
+        venue: eventData.venue,
+        attendees: eventData.attendeesList || [],
+      }));
+
+      return events;
     } catch (error) {
       console.error('Error fetching events:', error);
       throw error;
